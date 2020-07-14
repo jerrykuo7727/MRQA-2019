@@ -2,7 +2,7 @@
 
 python3_cmd=python3.6
 
-stage=0
+stage=1
 use_gpu=cuda:0
 
 model=bert
@@ -39,7 +39,7 @@ if [ $stage -le 1 ]; then
   echo "     Prepare data     "
   echo "======================"
   rm -rf data
-  for split in train dev test; do
+  for split in dev test train; do
     for dir in passage passage_no_unk question question_no_unk answer span; do
       mkdir -p data/$split/$dir
     done
@@ -52,6 +52,7 @@ if [ $stage -le 1 ]; then
   $python3_cmd scripts/prepare_${model}_data.py $model_path train $train_datasets || exit 1
 fi
 
+exit 0
 
 if [ $stage -le 2 ]; then
   echo "================================="

@@ -45,8 +45,10 @@ if __name__ == '__main__':
 
             # Passage
             raw_passage = PQA['DTEXT'].strip()
+            raw_passage_lower = raw_passage.lower()
             passage = tokenizer.tokenize(raw_passage)
             passage_no_unk = tokenize_no_unk(tokenizer, raw_passage)
+            passage_no_unk_lower = tokenize_no_unk(tokenizer, raw_passage_lower)
             PID = PQA['DID']
 
             # QA pairs
@@ -64,13 +66,8 @@ if __name__ == '__main__':
 
                 raw_answers = [A['ATEXT'].strip() for A in QA['ANSWER']]
                 raw_answer_start = QA['ANSWER'][0]['ATOKEN'][0]['start']
-                found_answer_starts = [m.start() for m in re.finditer(raw_answers[0], raw_passage)]
-                answer_order, best_dist = -1, 10000
-                for order, found_start in enumerate(found_answer_starts):
-                    dist = abs(found_start - raw_answer_start)
-                    if dist < best_dist:
-                        best_dist = dist
-                        answer_order = order
+                raw_answer_lower = raw_answers[0].lower()
+                answer_order = raw_passage_lower[:raw_answer_start].count(raw_answer_lower)
 
                 answer_no_unk = tokenize_no_unk(tokenizer, raw_answers[0])
                 answer_start = find_sublist(passage_no_unk, answer_no_unk, order=answer_order)
