@@ -17,35 +17,7 @@ SEED = 42
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-norm_tokenizer = BertTokenizer.from_pretrained('/home/M10815022/Models/bert-wwm-ext')
-
-
-def is_chinese(cp):
-    cp = ord(cp)
-    if ((0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF)
-            or (0x20000 <= cp <= 0x2A6DF) or (0x2A700 <= cp <= 0x2B73F)
-            or (0x2B740 <= cp <= 0x2B81F) or (0x2B820 <= cp <= 0x2CEAF)
-            or (0xF900 <= cp <= 0xFAFF) or (0x2F800 <= cp <= 0x2FA1F)):
-        return True
-    return False
-
-
-def convert_tokens_to_string(tokens):
-    output_string = str()
-    ends_with_chinese = True
-    for t in tokens:
-        if is_chinese(t[-1]):
-            output_string += t
-            ends_with_chinese = True
-        else:
-            if ends_with_chinese:
-                output_string += t
-            else:
-                output_string += ' ' + t
-            ends_with_chinese = False
-
-    output_string = output_string.replace(' ##', '')
-    return output_string
+norm_tokenizer = BertTokenizer.from_pretrained('/home/M10815022/Models/bert-large-cased')
 
 
 def validate_dataset(model, split, tokenizer, topk=1, prefix=None):
@@ -115,7 +87,7 @@ def validate_dataset(model, split, tokenizer, topk=1, prefix=None):
 
                     prob = start_prob + end_prob  # log prob  i.e. logits
                     span_tokens = fwd_input_tokens_no_unks[i][start_ind:end_ind+1]
-                    pred = convert_tokens_to_string(span_tokens)
+                    pred = tokenizer.convert_tokens_to_string(span_tokens)
 
                     if pred == tokenizer.sep_token or pred == '':
                         pass
@@ -148,7 +120,7 @@ def validate_dataset(model, split, tokenizer, topk=1, prefix=None):
 
                     prob = start_prob + end_prob  # log prob  i.e. logits
                     span_tokens = bwd_input_tokens_no_unks[i][start_ind:end_ind+1]
-                    pred = convert_tokens_to_string(span_tokens)
+                    pred = tokenizer.convert_tokens_to_string(span_tokens)
 
                     if pred == tokenizer.sep_token or pred == '':
                         pass
@@ -180,25 +152,29 @@ def validate_dataset(model, split, tokenizer, topk=1, prefix=None):
     del fwd_dataloader, bwd_dataloader
     return em, f1, count
 
-def validate(model, tokenizer, topk=1, prefix=None):
-    if prefix:
-        print('---- Validation results on %s dataset ----' % prefix)
 
-    # Valid set
-    val_em, val_f1, val_count = validate_dataset(model, 'dev', tokenizer, topk, prefix)
-    val_avg_em = 100 * val_em / val_count
-    val_avg_f1 = 100 * val_f1 / val_count
+def validate(model, tokenizer, topk=1, prefix=None, split=None):
+    if prefix is None or split is None:
+        # Valid set
+        val_em, val_f1, val_count = validate_dataset(model, 'dev', tokenizer, topk, prefix)
+        val_avg_em = 100 * val_em / val_count
+        val_avg_f1 = 100 * val_f1 / val_count
 
-    # Test set
-    if prefix is None:
-        prefix = 'FGC'
-    test_em, test_f1, test_count = validate_dataset(model, 'test', tokenizer, topk, prefix)
-    test_avg_em = 100 * test_em / test_count
-    test_avg_f1 = 100 * test_f1 / test_count
+        # Test set
+        test_em, test_f1, test_count = validate_dataset(model, 'test', tokenizer, topk, prefix)
+        test_avg_em = 100 * test_em / test_count
+        test_avg_f1 = 100 * test_f1 / test_count
     
-    print('%d-best | val_em=%.5f, val_f1=%.5f | test_em=%.5f, test_f1=%.5f' \
-        % (topk, val_avg_em, val_avg_f1, test_avg_em, test_avg_f1))
-    return val_avg_f1
+        print('%d-best | val_em=%.5f, val_f1=%.5f | test_em=%.5f, test_f1=%.5f' \
+            % (topk, val_avg_em, val_avg_f1, test_avg_em, test_avg_f1))
+        return val_avg_f1
+    else:
+        print('---- Validation result on %s-%s ----' % (prefix, split))
+        val_em, val_f1, val_count = validate_dataset(model, split, tokenizer, topk, prefix)
+        val_avg_em = 100 * val_em / val_count
+        val_avg_f1 = 100 * val_f1 / val_count
+        print('%d-best | em=%.5f, f1=%.5f' % (topk, val_avg_em, val_avg_f1))
+        return val_avg_f1
 
 
 if __name__ == '__main__':
@@ -210,8 +186,9 @@ if __name__ == '__main__':
 
     # Config
     lr = 3e-5
-    batch_size = 4
+    batch_size = 8
     accumulate_batch_size = 64
+    max_epoch = 4
     
     assert accumulate_batch_size % batch_size == 0
     update_stepsize = accumulate_batch_size // batch_size
@@ -231,7 +208,8 @@ if __name__ == '__main__':
     best_state_dict = model.state_dict()
     dataloader = get_dataloader('bert', 'train', tokenizer, batch_size=batch_size, num_workers=16)
     n_step_per_epoch = len(dataloader)
-    n_step_per_validation = n_step_per_epoch // 5
+    n_step_per_validation = n_step_per_epoch
+    max_step = n_step_per_epoch * max_epoch
     print('%d steps per epoch.' % n_step_per_epoch)
     print('%d steps per validation.' % n_step_per_validation)
 
@@ -268,12 +246,12 @@ if __name__ == '__main__':
                 else:
                     patience += 1
 
-            if patience >= 5 or step >= 200000:
-                print('Finish training. Scoring 1-best for all test splits...')
-                save_path = join(sys.argv[3], 'state_dict.pth')
-                torch.save(best_state_dict, save_path)
+            if patience >= 4 or step >= max_step:
+                print('Finish training. Scoring 1-best for dev/test splits...')
                 model.load_state_dict(best_state_dict)
-                for prefix in ('DRCD', 'Kaggle', 'Lee', 'ASR', 'FGC'):
-                    validate(model, tokenizer, topk=1, prefix=prefix)
+                for prefix in ('BioASQ', 'DROP', 'DuoRC', 'RACE', 'RelationExtraction', 'TextbookQA'):
+                    validate(model, tokenizer, topk=1, prefix=prefix, split='dev')
+                for prefix in ('HotpotQA', 'NaturalQuestions', 'NewsQA', 'SearchQA', 'SQuAD', 'TriviaQA'):
+                    validate(model, tokenizer, topk=1, prefix=prefix, split='test')
                 del model, dataloader
                 exit(0)
