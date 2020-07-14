@@ -6,22 +6,29 @@ stage=0
 use_gpu=cuda:0
 
 model=bert
-model_path=/home/M10815022/Models/roberta-wwm-ext
-save_path=./models/roberta-1.7.8-nm-AVG
+model_path=/home/M10815022/Models/bert-base-cased
+save_path=./models/bert-devout-devin
 
-train_datasets="DRCD_train Kaggle_train Lee_train ASR_train FGC_release_all_train"
-dev_datasets="DRCD_dev Kaggle_dev Lee_dev ASR_dev FGC_release_all_dev"
-test_datasets="DRCD_test Kaggle_test Lee_test ASR_test FGC_release_all_test"
+train_datasets="HotpotQA_train NaturalQuestions_train NewsQA_train SearchQA_train SQuAD_train TriviaQA_train"
+dev_datasets="BioASQ_dev DROP_dev DuoRC_dev RACE_dev RelationExtraction_dev TextbookQA_dev"
+test_datasets="HotpotQA_test NaturalQuestions_test NewsQA_test SearchQA_test SQuAD_test TriviaQA_test"
 
 
 if [ $stage -le 0 ]; then
   echo "====================================================="
   echo "     Convert data from MRQA-format to FGC-format     "
   echo "====================================================="
-  for dataset in $train_datasets $dev_datasets $test_datasets; do
-    file=dataset/$dataset.json
-    echo "Converting '$file'..."
-    opencc -i $file -o $file -c t2s.json || exit 1
+  mkdir -p dataset
+  for split in dev test train; do
+    echo "Converting $split set to FGC-format..."
+    split_path=./MRQA-Shared-Task-2019/$split
+
+    for fpath in $split_path/*; do
+      fname=`cut -d'/' -f4 <<< $fpath`
+      dataset=`cut -d'.' -f1 <<< $fname`
+      output_path=dataset/${dataset}_${split}.json
+      $python3_cmd scripts/convert_mrqa_to_fgc.py $fpath $output_path
+    done
   done
   echo "Done."
 fi
